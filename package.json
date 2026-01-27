@@ -7,7 +7,7 @@
   "dependencies": {
     "@tailwindcss/postcss": "^4.0.5",
     "lucide-react": "^0.546.0",
-    "next": "^15.1.5",
+    "next": "15.1.11",
     "nextra": "^4.0.4",
     "nextra-theme-blog": "^4.0.4",
     "postcss": "^8.5.1",
