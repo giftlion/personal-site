@@ -1,0 +1,153 @@
+---
+title: Only Types Programs
+description: When Your Types ARE the Algorithm
+date: 2026-04-16
+published: true
+---
+
+A while back I watched [this video of DOOM running in the TypeScript type system](https://www.youtube.com/watch?v=0mCsluv5FXA), and me and my friend Yoav from my unit got curious about how far you can push TS types. We obviously didn't get anywhere near what [dimitropoulos](https://github.com/dimitropoulos) is doing, but it was a fun rabbit hole — and it reframed how I think about types entirely.
+
+## Types as a program
+
+Usually when you write TypeScript, types are just a development-time aid: they help you understand what a variable holds, give you autocomplete, and stop you from doing dumb things. Once you compile, the types disappear. The output is plain JavaScript, because JavaScript has no type system.
+
+So from the runtime's perspective, types are not part of the program — they're just scaffolding that gets stripped away. What's surprising is that the scaffolding itself is *Turing-complete*. You can write real programs inside the type system, and the compiler runs them for you at type-check time. The "result" is the type it infers. No JS ever runs.
+
+To do that, we need a few building blocks.
+
+## Arithmetic (without built-in arithmetic)
+
+The examples below are real little programs: they need counting, adding, subtracting. TypeScript types do not give you that out of the box — you cannot write `type X = 10 - 4`, and there is no single “add these two type-level numbers” operator. So we're gonna use a few tricks to get around that. The next snippets show add and subtract done that way.
+
+One small thing that matters: for a **string** type, `length` is just `number` — TypeScript does not keep the real character count in the type. For a **tuple** (a fixed-length array type), it *does* keep the exact length as a literal:
+
+```ts
+type Str = "string"
+type Arr = [1, 2, 3, 4]
+
+type StrLen = Str["length"]
+// type StrLen = number
+
+type ArrLen = Arr["length"]
+// type ArrLen = 4
+```
+
+So these tricks use tuples, not string length.
+
+### Addition
+
+```ts
+type NumToArr<N extends number, Arr extends never[] = []> =
+  Arr["length"] extends N ? Arr : NumToArr<N, [...Arr, never]>
+
+type Plus<A extends number, B extends number> =
+  [...NumToArr<A>, ...NumToArr<B>]["length"] & number
+
+type Ten = Plus<5, 5>
+// type Ten = 10
+```
+
+`NumToArr<N>` grows a tuple one slot at a time until it has length `N`. `Plus<A, B>` makes two of those, merges them with spread, and takes the length. The `& number` bit helps TypeScript keep the answer as a specific number type like `10`, not plain `number`.
+
+### Subtraction
+
+```ts
+type Minus<A extends number, B extends number> =
+  NumToArr<A> extends [...NumToArr<B>, ...infer Rest] ? Rest["length"] : never;
+```
+
+Here we build a tuple of length `A` and try to match it as “first `B` items, then the rest.” If that works, the length of “the rest” is `A - B`. If `B` is bigger than `A`, it does not match and you get `never`.
+
+Multiplication is adding over and over; division is subtracting over and over. Same idea.
+
+With that in hand, let's actually build something.
+
+## Fibonacci
+
+```ts
+type NumToArr<N extends number, Arr extends never[] = []> =
+  Arr["length"] extends N ? Arr : NumToArr<N, [...Arr, never]>
+
+type Plus<A extends number, B extends number> =
+  [...NumToArr<A>, ...NumToArr<B>]["length"] & number
+
+type Minus<A extends number, B extends number> =
+  NumToArr<A> extends [...NumToArr<B>, ...infer Rest] ? Rest["length"] : never;
+
+type OneFibonacci<Num extends number> =
+  Num extends 1 ? 1 :
+  Num extends 2 ? 1 :
+  Plus<OneFibonacci<Minus<Num, 1>>, OneFibonacci<Minus<Num, 2>>>
+
+type Fibonacci<Num extends number, Arr extends any[] = []> =
+  Num extends Arr["length"] ? Arr :
+  Fibonacci<Num, [...Arr, OneFibonacci<Plus<Arr["length"], 1>>]>
+
+type FibonacciA = Fibonacci<17>
+// type FibonacciA = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597]
+```
+
+Two pieces here:
+
+- **`OneFibonacci<N>`** computes the `N`-th Fibonacci number. The base cases are `1` and `2`, both mapping to `1`. The recursive case is the textbook definition: `fib(n) = fib(n-1) + fib(n-2)`, expressed with our `Plus` and `Minus` types.
+- **`Fibonacci<N>`** builds the sequence up to `N` elements. It keeps an accumulator tuple `Arr`, and on each recursive step appends `OneFibonacci<Arr.length + 1>`. When `Arr`'s length reaches `N`, we're done.
+
+So `Fibonacci<17>` doesn't run any code at runtime — the compiler *evaluates* the recursion while type-checking and gives back a fully computed tuple type.
+
+### The wall you eventually hit
+
+This is fun, but it's not free. TypeScript limits recursion depth to keep the compiler from hanging on pathological types, and our definitions are *deeply* recursive (especially `OneFibonacci`, which branches into two recursive calls). Push it a bit further and the compiler gives up:
+
+```ts
+type FibonacciA = Fibonacci<19>
+// type FibonacciA = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, number, number]
+```
+
+The last two entries degrade to `number` — meaning "I know it's a number, I just couldn't figure out which one before I hit my recursion budget." This is the compiler's polite way of bailing out instead of crashing.
+
+Still, the fact that it works *at all* for 17 elements feels wild to me.
+
+## FizzBuzz
+
+This one is inspired by [Gal Hagever's take](https://gal.hagever.com/) and [this video](https://www.youtube.com/watch?v=ZHiT33F11mk), though my implementation takes a slightly different route.
+
+```ts
+type NumToArr<N extends number, Arr extends never[] = []> =
+  Arr["length"] extends N ? Arr : NumToArr<N, [...Arr, never]>
+
+type Plus<A extends number, B extends number> =
+  [...NumToArr<A>, ...NumToArr<B>]["length"] & number
+
+type Minus<A extends number, B extends number> =
+  NumToArr<A> extends [...NumToArr<B>, ...infer Rest] ? Rest["length"] : never;
+
+type IsDividedBy<Num extends number, Divider extends number> =
+  Num extends Divider ? true :
+  Minus<Num, Divider> extends never ? false :
+  IsDividedBy<Minus<Num, Divider>, Divider>
+
+type OneFizzBuzz<Num extends number> =
+  IsDividedBy<Num, 15> extends true ? "FizzBuzz" :
+  IsDividedBy<Num, 3> extends true ? "Fizz" :
+  IsDividedBy<Num, 5> extends true ? "Buzz" :
+  Num;
+
+type FizzBuzz<Num extends number, Arr extends any[] = []> =
+  Num extends Arr["length"] ? Arr :
+  FizzBuzz<Num, [...Arr, OneFizzBuzz<Plus<Arr["length"], 1>>]>
+
+type FizzBuzzA = FizzBuzz<30>
+// type FizzBuzzA = [1, 2, "Fizz", 4, "Buzz", "Fizz", 7, 8, "Fizz", "Buzz", 11, "Fizz", 13, 14, "FizzBuzz", 16, 17, "Fizz", 19, "Buzz", "Fizz", 22, 23, "Fizz", "Buzz", 26, "Fizz", 28, 29, "FizzBuzz"]
+```
+
+The key trick is **`IsDividedBy`**. Without `%`, we check divisibility by subtracting `Divider` from `Num` until one of three things happens:
+
+1. `Num extends Divider` — they're equal, so it divides evenly. Return `true`.
+2. `Minus<Num, Divider> extends never` — we overshot (subtraction "failed" because `B > A`), so it doesn't divide evenly. Return `false`.
+3. Otherwise — keep subtracting and recurse.
+
+From there, **`OneFizzBuzz<Num>`** is just the usual ladder: check 15 first (to catch both), then 3, then 5, otherwise the number itself. Importantly, the branch order matters — if we checked 3 before 15, every multiple of 15 would be labeled `"Fizz"`.
+
+Finally, **`FizzBuzz<Num>`** is the same accumulator pattern as `Fibonacci`: grow a tuple one element at a time, feeding the current index into `OneFizzBuzz` until we reach `Num` entries.
+
+

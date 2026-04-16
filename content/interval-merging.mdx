@@ -1,0 +1,160 @@
+---
+title: Interval Merging
+description: Why storing every integer in a Set blows up on large ranges, and how merging intervals fixes it—learned from an Advent of Code puzzle.
+date: 2026-04-16
+published: true
+---
+
+A while back I started doing [Advent of Code](https://adventofcode.com) after watching someone work through a puzzle ([CJ’s video](https://www.youtube.com/watch?v=-G-nU0NVouI)). One puzzle—roughly “day 5, part 2” territory—taught me something useful about **sets in Node.js**, **very large numeric ranges**, and a small algorithmic idea: **merging intervals**.
+
+## What the puzzle asks
+
+The story is about “fresh ingredient ID ranges.” You get many lines like `3-5` or `10-14`, each meaning *every integer from the start through the end, inclusive*, counts as fresh. An ID is fresh if it falls in **any** of those ranges. The task is: **how many distinct integers** are covered?
+
+Example from the puzzle text:
+
+```
+3-5
+10-14
+16-20
+12-18
+```
+
+Laid out on a number line, those four ranges look like this:
+
+<svg viewBox="0 0 660 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four input ranges on a number line from 3 to 20. 10-14, 12-18, and 16-20 overlap and merge into a single run from 10 to 20." style={{width:"100%",height:"auto",margin:"1.5rem 0"}}>
+  <g fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace" fontSize="11" fill="currentColor">
+    <g opacity="0.55">
+      <text x="55" y="14" textAnchor="middle">3</text>
+      <text x="85" y="14" textAnchor="middle">4</text>
+      <text x="115" y="14" textAnchor="middle">5</text>
+      <text x="145" y="14" textAnchor="middle">6</text>
+      <text x="175" y="14" textAnchor="middle">7</text>
+      <text x="205" y="14" textAnchor="middle">8</text>
+      <text x="235" y="14" textAnchor="middle">9</text>
+      <text x="265" y="14" textAnchor="middle">10</text>
+      <text x="295" y="14" textAnchor="middle">11</text>
+      <text x="325" y="14" textAnchor="middle">12</text>
+      <text x="355" y="14" textAnchor="middle">13</text>
+      <text x="385" y="14" textAnchor="middle">14</text>
+      <text x="415" y="14" textAnchor="middle">15</text>
+      <text x="445" y="14" textAnchor="middle">16</text>
+      <text x="475" y="14" textAnchor="middle">17</text>
+      <text x="505" y="14" textAnchor="middle">18</text>
+      <text x="535" y="14" textAnchor="middle">19</text>
+      <text x="565" y="14" textAnchor="middle">20</text>
+    </g>
+    <line x1="40" y1="22" x2="580" y2="22" stroke="currentColor" strokeOpacity="0.15" />
+    <rect x="40" y="30" width="90" height="18" rx="3" fill="currentColor" opacity="0.28" />
+    <text x="595" y="43" opacity="0.75">3–5</text>
+    <rect x="250" y="54" width="150" height="18" rx="3" fill="currentColor" opacity="0.28" />
+    <text x="595" y="67" opacity="0.75">10–14</text>
+    <rect x="430" y="78" width="150" height="18" rx="3" fill="currentColor" opacity="0.28" />
+    <text x="595" y="91" opacity="0.75">16–20</text>
+    <rect x="310" y="102" width="210" height="18" rx="3" fill="currentColor" opacity="0.28" />
+    <text x="595" y="115" opacity="0.75">12–18</text>
+    <line x1="40" y1="138" x2="580" y2="138" stroke="currentColor" strokeOpacity="0.2" strokeDasharray="2 4" />
+    <text x="40" y="156" opacity="0.55" fontStyle="italic">after merging</text>
+    <rect x="40" y="168" width="90" height="18" rx="3" fill="currentColor" opacity="0.72" />
+    <rect x="250" y="168" width="330" height="18" rx="3" fill="currentColor" opacity="0.72" />
+    <text x="595" y="181" fontWeight="600" opacity="0.85">3–5, 10–20</text>
+  </g>
+</svg>
+
+`12-18` overlaps `10-14` on the left and `16-20` on the right, so those three rows collapse into one run from `10` through `20`. The fresh IDs are `3, 4, 5` and then `10` through `20`—**14** distinct IDs, not the sum of each range’s length taken separately.
+
+So far, this sounds like “collect every integer into a `Set`, dedupe, count.” That’s the trap.
+
+## The naive approach (and why it breaks)
+
+The obvious code iterates every integer in every range and adds it to a `Set`:
+
+```ts
+import * as fs from "fs";
+
+const content = fs.readFileSync("adventofcode/05-input.txt", "utf-8");
+const ranges = content.split(/\n\s*\n/)[0]?.split("\n")!;
+
+const uniqueNumbers = new Set<number>();
+
+for (const range of ranges) {
+  const start = Number(range.split("-")[0]!);
+  const end = Number(range.split("-")[1]!);
+
+  for (let i = start; i <= end; i++) {
+    uniqueNumbers.add(i);
+  }
+}
+
+console.log(uniqueNumbers.size);
+```
+
+On the real input, Node threw:
+
+```bash
+RangeError: Set maximum size exceeded at Set.add (<anonymous>)
+```
+
+That error exists for a reason. In **V8** (the engine behind Node.js and Chrome), a `Set` cannot hold more than **2^24 = 16,777,216** entries—the **16,777,217th** `add` throws `RangeError: Set maximum size exceeded`. The same fixed cap applies to `Map`. It is an engine implementation limit, not a JavaScript spec one, and it is separate from how much RAM you give the process.
+
+Even if the cap were lifted, **the approach is wrong at scale**. The puzzle input has lines like `267797691954052-269140721231006`—a single range covering roughly **1.3 billion** IDs. At 8 bytes per `number`, storing one such range as individual entries would already need ~10 GB of memory, and the real input has dozens of ranges of that size. You would exhaust RAM long before you counted anything.
+
+The lesson is not “use a bigger collection”—it is “**stop enumerating points.**” You have to work in terms of **ranges**, not **elements**.
+
+So how should you actually count? For a **single** closed range `[start, end]`, the number of integers inside it is **`end - start + 1`**. If every range were disjoint—gaps between them on the number line—the total count would simply be the sum of `(end - start + 1)` across ranges. The trouble is overlap: summing every `(end - start + 1)` double-counts the shared stretches. So the real task is not “add every range’s length,” but “know the **union** of ranges.”
+
+## Interval merging
+
+**How do you get rid of the overlap?** You do not delete IDs; you **collapse** the ranges that collide into a smaller list of **non-overlapping** segments that still cover exactly the same integers. Once nothing overlaps, each ID lives in exactly one segment, and you can safely sum `(end - start + 1)` again.
+
+**Interval merging** is that collapse step: take a list of closed intervals `[start, end]` on the number line, combine any that **overlap or touch**, and replace them with a **minimal** list of disjoint intervals that cover exactly the same set of points.
+
+- Two intervals overlap if they share any integer.
+- If `A` ends at `14` and `B` starts at `12`, they overlap; merged, they become one interval.
+- After merging, **no** two intervals in the result overlap, and nothing was double-counted.
+
+**Algorithm (sketch):**
+
+1. Sort intervals by `start` (and by `end` if you like tie-breaking).
+2. Walk the sorted list, keeping a “current” merged interval.
+3. For each next interval: if it starts **at or before** `current.end + 1`, extend `current.end` to `max(current.end, next.end)`. Otherwise, push `current` to the output and start a new `current`.
+
+Why `current.end + 1` and not just `current.end`? Because these are **closed** intervals—both endpoints included—so `[1,5]` and `[6,10]` cover `1..10` with no gap between them. They "touch," and they should merge. For **half-open** intervals `[start, end)` you would drop the `+ 1`. This is the #1 off-by-one bug people write the first time they implement this.
+
+After merging, the **count of distinct integers** is the sum of `(end - start + 1)` over the merged intervals. Merging turns the overlapping case back into the simple disjoint sum.
+
+**Complexity.** Sort is `O(n log n)`; the walk is `O(n)`. Critically, space is `O(n)` in the **number of ranges**, not in the size of the covered set—that is the whole point. You never enumerate an integer.
+
+```ts
+type Interval = { start: number; end: number };
+
+function mergeIntervals(intervals: Interval[]): Interval[] {
+  if (intervals.length === 0) return [];
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const out: Interval[] = [];
+  let cur = { ...sorted[0]! };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const next = sorted[i]!;
+    if (next.start <= cur.end + 1) {
+      cur.end = Math.max(cur.end, next.end);
+    } else {
+      out.push(cur);
+      cur = { ...next };
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function countCoveredIds(intervals: Interval[]): number {
+  return mergeIntervals(intervals).reduce((sum, { start, end }) => sum + (end - start + 1), 0);
+}
+```
+
+
+
+## Back to the puzzle
+
+On my actual input the raw file had hundreds of ranges with bounds well past 10^14. After sorting and one linear pass, they collapsed into a handful of disjoint segments, and summing `(end - start + 1)` over those gave the answer in a few milliseconds—on the same machine where the `Set` version couldn't finish at all. The change in runtime wasn't a constant-factor speedup; it was the difference between "impossible" and "instant," because the algorithm's cost stopped depending on the size of the covered set and started depending only on the number of ranges.
+

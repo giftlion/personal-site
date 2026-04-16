@@ -60,31 +60,31 @@ export default async function HomePage() {
         </div>
       </section> */}
 
-        {/* Projects Section */}
-        <section className="max-w-4xl mx-auto px-6 py-16 border-t border-gray-800">
-          <h2 className="text-3xl font-bold mb-8">Projects</h2>
-          <div className="space-y-8">
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                title={project.title}
-                description={project.description}
-                liveUrl={project.liveUrl}
-                githubUrl={project.githubUrl}
-              />
-            ))}
-          </div>
-        </section>
+      {/* Projects Section */}
+      <section className="max-w-4xl mx-auto px-6 py-16 border-t border-gray-800">
+        <h2 className="text-3xl font-bold mb-8">Projects</h2>
+        <div className="space-y-8">
+          {projects.map((project) => (
+            <ProjectCard
+              key={project.id}
+              title={project.title}
+              description={project.description}
+              liveUrl={project.liveUrl}
+              githubUrl={project.githubUrl}
+            />
+          ))}
+        </div>
+      </section>
 
-        {/* Blog Section */}
-        <section className="max-w-4xl mx-auto px-6 py-16 border-t border-gray-800">
-          <h2 className="text-3xl font-bold mb-8">Latest Posts</h2>
-          <div className="space-y-8">
-            {posts.map((post) => (
-              <PostCard key={post.route} post={post} />
-            ))}
-          </div>
-        </section>
+      {/* Blog Section */}
+      <section className="max-w-4xl mx-auto px-6 py-16 border-t border-gray-800">
+        <h2 className="text-3xl font-bold mb-8">Latest Posts</h2>
+        <div className="space-y-8">
+          {posts.map((post) => (
+            <PostCard key={post.route} post={post} />
+          ))}
+        </div>
+      </section>
 
       {/* Get in Touch */}
       {/* <section className="max-w-4xl mx-auto px-6 py-16 border-t border-gray-800">

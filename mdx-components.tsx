@@ -4,17 +4,21 @@ import { Image } from "nextra/components";
 
 const blogComponents = getBlogMDXComponents({
   wrapper: ({ children, metadata }) => (
-    
     <div className="text-white!">
       <div className="mb-32">
         <h2 className="text-center font-normal text-white!">
-          {new Date(metadata.timestamp!).toLocaleDateString("en", {
+          {new Date(metadata.date ?? metadata.timestamp!).toLocaleDateString("en", {
             day: "numeric",
             month: "numeric",
             year: "numeric",
           })}
         </h2>
         <h1 className="text-center text-5xl! text-white!">{metadata.title}</h1>
+        {metadata.description && (
+          <p className="text-center text-lg text-gray-400 mt-6 max-w-2xl mx-auto px-4">
+            {metadata.description}
+          </p>
+        )}
       </div>
       <div>{children}</div>
     </div>
