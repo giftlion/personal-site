@@ -1,28 +1,35 @@
 import React from "react";
+import type { $NextraMetadata } from "nextra";
 import { useMDXComponents as getBlogMDXComponents } from "nextra-theme-blog";
 import { Image } from "nextra/components";
 
+/** Front matter `date` is used by nextra-theme-blog but not on `$NextraMetadata`. */
+type BlogPageMetadata = $NextraMetadata & { date?: string };
+
 const blogComponents = getBlogMDXComponents({
-  wrapper: ({ children, metadata }) => (
+  wrapper: ({ children, metadata }) => {
+    const meta = metadata as BlogPageMetadata;
+    return (
     <div className="text-white!">
       <div className="mb-32">
         <h2 className="text-center font-normal text-white!">
-          {new Date(metadata.date ?? metadata.timestamp!).toLocaleDateString("en", {
+          {new Date(meta.date ?? meta.timestamp!).toLocaleDateString("en", {
             day: "numeric",
             month: "numeric",
             year: "numeric",
           })}
         </h2>
-        <h1 className="text-center text-5xl! text-white!">{metadata.title}</h1>
-        {metadata.description && (
+        <h1 className="text-center text-5xl! text-white!">{meta.title}</h1>
+        {meta.description && (
           <p className="text-center text-lg text-gray-400 mt-6 max-w-2xl mx-auto px-4">
-            {metadata.description}
+            {meta.description}
           </p>
         )}
       </div>
       <div>{children}</div>
     </div>
-  ),
+    );
+  },
   h1: ({ children }) => (
     <h1
       className="text-center! text-white"
