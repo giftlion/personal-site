@@ -6,6 +6,7 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.0.5",
+    "@vercel/speed-insights": "^2.0.0",
     "lucide-react": "^0.546.0",
     "next": "15.1.11",
     "nextra": "^4.0.4",
