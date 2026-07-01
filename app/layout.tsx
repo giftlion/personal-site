@@ -4,6 +4,7 @@ import { Banner, Head, Search } from "nextra/components";
 import { getPageMap } from "nextra/page-map";
 import FloatingNavbar from "../components/Navbar";
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css'
 import "nextra-theme-blog/style.css";
 
@@ -19,6 +20,7 @@ export default async function RootLayout({ children }) {
         <FloatingNavbar />
         {children}
         <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );
